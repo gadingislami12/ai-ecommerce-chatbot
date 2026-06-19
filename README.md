@@ -85,6 +85,45 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
   - *Conversations*: Session log explorer auditing customer dialogues.
 - **AI Chatbot** (Global Widget): Floating window parsing Gemini returns and rendering inline `ProductCard` components.
 
+
+---
+
+## Laporan Pengumpulan Proyek (Deliverables Checklist)
+
+### 1. Repositori GitHub
+* **URL Repositori:** [https://github.com/gadingislami12/ai-ecommerce-chatbot](https://github.com/gadingislami12/ai-ecommerce-chatbot)
+* **Status:** Public (Siap di-review)
+
+### 2. URL Live Demo
+* **URL Website:** [https://ai-ecommerce-chabot.vercel.app/](https://ai-ecommerce-chabot.vercel.app/)
+
+### 3. Skema Supabase / Migration File
+* **Letak File SQL:** [supabase/migrations/migration.sql](file:///c:/xampp/htdocs/ai_ecommerce_chabot/supabase/migrations/migration.sql)
+
+### 4. Ringkasan Fitur yang Selesai & Belum Selesai
+
+#### Fitur yang Selesai (Completed):
+* **Pencarian & Filter Produk:** Pencarian instan dan filter kategori dinamis di halaman depan.
+* **Halaman Detail Produk:** Detail spesifikasi produk dan status ketersediaan stok.
+* **Autentikasi Admin:** Akses terproteksi ke dashboard admin menggunakan Supabase Auth.
+* **Manajemen Produk (CRUD):** Create, Read, Update, Delete produk dengan sistem upload gambar langsung ke Supabase Storage.
+* **Audit Percakapan Chatbot:** Dashboard untuk melihat semua sesi percakapan chatbot pelanggan secara real-time.
+* **AI Chatbot Belanja:** Chatbot dengan model `gemini-2.5-flash` yang dapat merekomendasikan produk secara inline menggunakan kartu produk interaktif.
+* **Penyimpanan Sesi:** Menggunakan session ID lokal agar riwayat chat tidak hilang saat berpindah halaman.
+
+#### Fitur yang Belum Selesai (Future Enhancements):
+* **Sistem Checkout & Payment Gateway:** Saat ini tombol beli mengarah ke halaman detail. Integrasi payment gateway riil (seperti Midtrans) akan ditambahkan sebagai pengembangan berikutnya.
+* **Pencarian Semantik (RAG):** Menggunakan vector search (`pgvector`) untuk pencarian produk berbasis kemiripan makna ketika katalog sudah berskala besar.
+
+### 5. AI Tools yang Digunakan
+* **Google Gemini API (`gemini-2.5-flash`):** Sebagai engine kecerdasan buatan utama untuk memproses pertanyaan pelanggan dan menghasilkan rekomendasi produk terformat.
+* **Antigravity AI Coding Assistant:** Digunakan selama proses development untuk mempercepat bootstrap Next.js, pembuatan layout Tailwind CSS, debugging TypeScript, serta perancangan skema relasi database Supabase.
+
+### 6. Trade-off Teknis yang Diambil
+* **Client-side Fetching:** Kami menggunakan Client-side fetching (React Hooks) pada pencarian storefront agar performa pencarian terasa instan dan interaktif bagi pengguna, meskipun ini memindahkan proses rendering ke browser pengguna daripada Server-side Rendering (SSR).
+* **Base64 vs Storage Bucket:** Gambar produk disimpan dalam Supabase Storage public bucket, bukan sebagai string Base64 di database. Hal ini menjaga ukuran baris database tetap kecil dan meningkatkan performa query, meskipun menambah kompleksitas manajemen kebijakan RLS pada storage.
+* **Direct Prompt Injection vs RAG:** Kami memasukkan katalog produk langsung ke dalam instruksi sistem (system prompt) chatbot karena katalog saat ini masih kecil. Ini sangat cepat diimplementasikan, namun memiliki batasan kapasitas token jika katalog bertambah besar di masa depan.
+
 ---
 
 ## Jawaban Pertanyaan Refleksi
