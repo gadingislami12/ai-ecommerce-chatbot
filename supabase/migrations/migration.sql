@@ -66,3 +66,29 @@ CREATE POLICY "Allow public read messages" ON public.messages
 
 CREATE POLICY "Allow authenticated manage messages" ON public.messages
     FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- 7. Storage Policies for 'product-images' Bucket
+-- Policy to allow public read access to the 'product-images' bucket
+CREATE POLICY "Public Read Access"
+ON storage.objects FOR SELECT
+USING (bucket_id = 'product-images');
+
+-- Policy to allow authenticated users (admin) to upload (insert) files to the 'product-images' bucket
+CREATE POLICY "Admin Upload Access"
+ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK (bucket_id = 'product-images');
+
+-- Policy to allow authenticated users (admin) to update files in the 'product-images' bucket
+CREATE POLICY "Admin Update Access"
+ON storage.objects FOR UPDATE
+TO authenticated
+USING (bucket_id = 'product-images')
+WITH CHECK (bucket_id = 'product-images');
+
+-- Policy to allow authenticated users (admin) to delete files in the 'product-images' bucket
+CREATE POLICY "Admin Delete Access"
+ON storage.objects FOR DELETE
+TO authenticated
+USING (bucket_id = 'product-images');
+
