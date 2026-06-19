@@ -1,90 +1,89 @@
 # AuraCart | AI Ecommerce Chatbot
 
-AuraCart is a premium, full-stack, modern ecommerce web application built with **Next.js 15 (App Router)**, **TypeScript**, **Tailwind CSS**, **Supabase**, and the **Google Gemini API**.
+AuraCart adalah aplikasi web e-commerce full-stack modern premium yang dibangun dengan **Next.js 15 (App Router)**, **TypeScript**, **Tailwind CSS**, **Supabase**, dan **Google Gemini API**.
 
-It features a public storefront with real-time product search and category filters, an admin control panel for product catalog management, and a context-restricted AI chatbot widget equipped with inline product recommendation cards.
-
----
-
-## Technical Stack & Features
-
-- **Next.js 15 (App Router)**: Utilizing server-side rendering for catalog queries and API route handlers for chat endpoints.
-- **Supabase Database & Auth**: Stores products, conversation logs, and customer messages with protected admin dashboards and route guards.
-- **Supabase Storage**: Supports direct product image uploads from the admin portal.
-- **Google Gemini API**: Utilizes `gemini-2.5-flash` with tailored system instructions for query answering and inline recommendation formatting (`[RecommendProduct: <uuid>]`).
-- **Tailwind CSS**: Responsive dark/glassmorphic designs with hover transitions and micro-animations.
+Aplikasi ini menyediakan storefront publik dengan pencarian produk real-time dan filter kategori, panel kontrol admin untuk manajemen katalog produk, serta widget chatbot AI dengan pembatasan konteks yang dilengkapi dengan kartu rekomendasi produk interaktif secara inline.
 
 ---
 
-## Environment Configuration
+## Teknologi & Fitur
 
-Create a `.env.local` file in the root directory and configure the following credentials:
+- **Next.js 15 (App Router)**: Memanfaatkan rendering sisi server (Server-side Rendering) untuk query katalog dan API route handler untuk endpoint obrolan.
+- **Supabase Database & Auth**: Menyimpan produk, log percakapan, dan pesan pelanggan dengan dashboard admin yang terproteksi dan route guard keamanan.
+- **Supabase Storage**: Mendukung unggahan gambar produk secara langsung dari portal admin.
+- **Google Gemini API**: Menggunakan model **`gemini-2.5-flash`** dengan instruksi sistem yang disesuaikan untuk menjawab pertanyaan dan memformat rekomendasi inline (`[RecommendProduct: <uuid>]`).
+- **Tailwind CSS**: Desain responsif bertema dark mode & glassmorphism dengan transisi hover dan mikro-animasi premium.
+
+---
+
+## Konfigurasi Environment
+
+Buat file `.env.local` di direktori utama (root) proyek Anda dan konfigurasi kredensial berikut:
 
 ```env
-# Supabase Configuration
-NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
+# Konfigurasi Supabase
+NEXT_PUBLIC_SUPABASE_URL=https://project-id-anda.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
-# Google Gemini API Configuration
-GEMINI_API_KEY=AIzaSy...
+# Konfigurasi Google Gemini API
+GEMINI_API_KEY=AQ.Ab8RN...
 ```
 
 ---
 
-## Supabase Database Setup
+## Setup Database Supabase
 
-### 1. Execute Migration SQL
-Go to your **Supabase Project Dashboard -> SQL Editor** and execute the SQL statements defined in the migration file:
+### 1. Jalankan Migration SQL
+Buka **Dashboard Proyek Supabase -> SQL Editor** Anda dan jalankan pernyataan SQL yang ditentukan dalam file migrasi:
 [supabase/migrations/migration.sql](file:///c:/xampp/htdocs/ai_ecommerce_chabot/supabase/migrations/migration.sql)
 
-This script sets up:
-- The `products`, `conversations`, and `messages` tables.
-- Performance indexes for category and session queries.
-- Row Level Security (RLS) policies allowing public read/insert for chatbot operations, but restricting CRUD edits to authenticated admins.
+Skrip ini akan mengatur:
+- Tabel `products`, `conversations`, dan `messages`.
+- Indeks performa untuk query kategori dan sesi.
+- Kebijakan Row Level Security (RLS) yang mengizinkan baca/tulis publik untuk operasi chatbot, namun membatasi CRUD produk hanya untuk admin terautentikasi.
 
-### 2. Configure Storage Bucket
-1. Go to **Supabase Dashboard -> Storage**.
-2. Click **New Bucket** and name it `product-images`.
-3. Set the bucket to **Public** so product images are accessible.
-4. Add policies:
-   - **Allowed operations**: Select is public (`true`).
-   - **Manage operations**: Insert, Update, and Delete are restricted to `authenticated` users (admins).
+### 2. Konfigurasi Storage Bucket
+1. Buka **Supabase Dashboard -> Storage**.
+2. Klik **New Bucket** dan beri nama `product-images`.
+3. Atur bucket menjadi **Public** agar gambar produk dapat diakses secara publik oleh browser.
+4. Tambahkan kebijakan (Policies):
+   - **Allowed operations (Select):** Terbuka untuk umum (`true`).
+   - **Manage operations (Insert/Update/Delete):** Dibatasi hanya untuk pengguna terautentikasi (`authenticated` / admin).
 
-### 3. Create Admin Account
-1. Go to **Supabase Dashboard -> Authentication -> Users**.
-2. Click **Add User** and choose **Create User**.
-3. Input your email and password credentials. Use these credentials to sign in on the `/login` page of your application.
+### 3. Buat Akun Admin
+1. Buka **Supabase Dashboard -> Authentication -> Users**.
+2. Klik **Add User** dan pilih **Create User**.
+3. Masukkan kredensial email dan password Anda. Gunakan kredensial ini untuk masuk pada halaman `/login` aplikasi Anda.
 
 ---
 
-## Getting Started
+## Langkah Memulai
 
-First, install dependencies:
+Pertama, instal dependensi proyek:
 
 ```bash
 npm install
 ```
 
-Second, run the development server:
+Kedua, jalankan server development lokal:
 
 ```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the AuraCart storefront.
+Buka [http://localhost:3000](http://localhost:3000) dengan browser Anda untuk melihat storefront AuraCart.
 
 ---
 
-## Application Layout Architecture
+## Arsitektur Layout Aplikasi
 
-- **Public Frontpage** (`/`): Renders catalog grids, categories, and text searches.
-- **Product Detail** (`/products/[id]`): Server Component showcasing description and availability.
-- **Admin Authentication** (`/login`): Centered login form using Supabase auth.
-- **Admin Control Panel** (`/admin`): Toggle between:
-  - *Products*: Listing CRUD table with form sliders and image uploads.
-  - *Conversations*: Session log explorer auditing customer dialogues.
-- **AI Chatbot** (Global Widget): Floating window parsing Gemini returns and rendering inline `ProductCard` components.
-
+- **Halaman Utama Publik** (`/`): Merender grid katalog, filter kategori, dan pencarian teks.
+- **Detail Produk** (`/products/[id]`): Server Component yang menampilkan deskripsi dan status ketersediaan stok.
+- **Autentikasi Admin** (`/login`): Formulir login admin di posisi tengah menggunakan Supabase Auth.
+- **Panel Kontrol Admin** (`/admin`): Dashboard dengan tab untuk berpindah antara:
+  - *Products*: Tabel CRUD produk lengkap dengan form slider dan unggahan gambar.
+  - *Conversations*: Eksplorer sesi chat untuk mengaudit riwayat percakapan pelanggan.
+- **AI Chatbot** (Global Widget): Widget melayang di pojok kanan bawah yang memproses balasan Gemini dan merender komponen `ProductCard` secara interaktif di dalam thread chat.
 
 ---
 
@@ -144,4 +143,3 @@ Tantangan ini memadukan arsitektur web modern full-stack (Next.js & Supabase) de
 * **RAG Vector Search**: Membatasi muatan payload konteks sistem LLM menggunakan pencarian vector semantis, guna menghemat biaya token API Gemini dan mempercepat waktu tunggu respons AI.
 * **Caching Layer**: Menerapkan Redis caching untuk menyimpan respons chatbot yang sering ditanyakan (FAQ) serta data session obrolan aktif pengguna guna mengurangi beban langsung ke database Supabase dan API Gemini.
 * **Rate Limiting & Edge Functions**: Menerapkan pembatasan laju permintaan (rate limiting) menggunakan token bucket di Next.js middleware, serta memindahkan backend API Chatbot ke Edge Runtime (Vercel Edge / Supabase Edge Functions) untuk meminimalkan waktu respon (TTFB) secara global.
-
