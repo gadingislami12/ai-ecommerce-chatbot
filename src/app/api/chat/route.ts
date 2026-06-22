@@ -61,10 +61,12 @@ export async function POST(request: Request) {
     let products: any[] = [];
     let knowledge: any[] = [];
     let vectorSearchSuccess = false;
+    let cachedAnswer: string | null = null;
+    let userEmbedding: number[] | null = null;
 
     try {
       // Generate user message embedding
-      const userEmbedding = await generateEmbedding(message);
+      userEmbedding = await generateEmbedding(message);
 
       // Perform semantic search for products
       const { data: rpcProducts, error: prodRpcError } = await supabase.rpc('match_products', {
@@ -88,31 +90,58 @@ export async function POST(request: Request) {
       
       if (!knowRpcError && rpcKnowledge) {
         knowledge = rpcKnowledge;
+        // Check for cache hit (highly similar previous user question)
+        if (rpcKnowledge.length > 0 && rpcKnowledge[0].similarity >= 0.96) {
+          cachedAnswer = rpcKnowledge[0].answer;
+          console.log(`[Cache Hit] Similarity: ${rpcKnowledge[0].similarity.toFixed(4)}. Bypassing Gemini API.`);
+        }
       }
     } catch (vectorSearchError) {
       console.warn('Vector search failed during chat. Falling back to full product catalog. Error:', vectorSearchError);
     }
 
-    // Fallback: If vector search failed or returned no products, load full product catalog (default logic)
-    if (!vectorSearchSuccess || products.length === 0) {
-      const { data: allProducts, error: productsError } = await supabase
-        .from('products')
-        .select('*');
+    let aiReply = '';
 
-      if (productsError) {
-        console.error('Error fetching fallback products catalog:', productsError);
-        throw productsError;
+    if (cachedAnswer) {
+      aiReply = cachedAnswer;
+    } else {
+      // Fallback: If vector search failed or returned no products, load full product catalog (default logic)
+      if (!vectorSearchSuccess || products.length === 0) {
+        const { data: allProducts, error: productsError } = await supabase
+          .from('products')
+          .select('*');
+
+        if (productsError) {
+          console.error('Error fetching fallback products catalog:', productsError);
+          throw productsError;
+        }
+        products = allProducts || [];
       }
-      products = allProducts || [];
-    }
 
-    // 4. Generate AI response using Gemini API with RAG context
-    const aiReply = await generateChatbotResponse(
-      message,
-      history || [],
-      products,
-      knowledge
-    );
+      // 4. Generate AI response using Gemini API with RAG context
+      aiReply = await generateChatbotResponse(
+        message,
+        history || [],
+        products,
+        knowledge
+      );
+
+      // Save to cache (chatbot_knowledge table) for future learning if Gemini generated it
+      if (userEmbedding) {
+        try {
+          await supabase.from('chatbot_knowledge').insert([
+            {
+              question: message,
+              answer: aiReply,
+              embedding: userEmbedding
+            }
+          ]);
+          console.log(`[Cache Saved] Saved new Q&A to database for future chatbot learning.`);
+        } catch (saveCacheErr) {
+          console.warn('Failed to save learning Q&A to database:', saveCacheErr);
+        }
+      }
+    }
 
     // 5. Save user message and AI response to Supabase messages table
     const { error: saveUserMsgError } = await supabase
