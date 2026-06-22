@@ -146,10 +146,14 @@ export default function ChatbotWidget() {
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
+    <div className={`fixed z-50 flex flex-col items-end transition-all duration-300 ${
+      isOpen 
+        ? 'inset-0 sm:inset-auto sm:bottom-6 sm:right-6' 
+        : 'bottom-6 right-6'
+    }`}>
       {/* Chat Window Panel */}
       {isOpen && (
-        <div className="mb-4 flex h-[500px] w-[350px] sm:w-[400px] flex-col overflow-hidden rounded-3xl border border-white/10 bg-slate-950 shadow-2xl backdrop-blur-xl transition-all duration-300 ease-in-out select-none">
+        <div className="mb-0 sm:mb-4 flex h-full sm:h-[500px] w-full sm:w-[400px] flex-col overflow-hidden rounded-none sm:rounded-3xl border-0 sm:border border-white/10 bg-slate-950 shadow-2xl backdrop-blur-xl transition-all duration-300 ease-in-out select-none">
           {/* Header */}
           <div className="flex items-center justify-between border-b border-white/5 bg-slate-900 px-4 py-3.5">
             <div className="flex items-center space-x-2.5">
@@ -295,7 +299,9 @@ export default function ChatbotWidget() {
       {/* Floating Toggle Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-tr from-violet-600 to-indigo-600 text-white shadow-xl shadow-indigo-600/30 hover:scale-[1.05] active:scale-[0.95] transition-all duration-300 group"
+        className={`flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-tr from-violet-600 to-indigo-600 text-white shadow-xl shadow-indigo-600/30 hover:scale-[1.05] active:scale-[0.95] transition-all duration-300 group ${
+          isOpen ? 'hidden sm:flex' : 'flex'
+        }`}
       >
         {isOpen ? (
           <X className="h-6 w-6 transition-transform duration-300 rotate-90" />
