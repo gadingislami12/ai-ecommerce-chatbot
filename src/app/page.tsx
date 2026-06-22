@@ -23,8 +23,18 @@ export default function Storefront() {
     try {
       setLoading(true);
       setError(null);
-      const { data, error: fetchErr } = await productService.searchProducts(search, cat);
-      if (fetchErr) throw fetchErr;
+      
+      const url = new URL('/api/products', window.location.origin);
+      if (search) url.searchParams.append('q', search);
+      if (cat && cat !== 'All') url.searchParams.append('category', cat);
+
+      const res = await fetch(url.toString());
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to fetch products');
+      }
+
+      const data = await res.json();
       setProducts(data || []);
     } catch (err: unknown) {
       console.error('Error fetching products:', err);
@@ -33,7 +43,7 @@ export default function Storefront() {
     } finally {
       setLoading(false);
     }
-  }, [productService]);
+  }, []);
 
   useEffect(() => {
     const fetchCategories = async () => {

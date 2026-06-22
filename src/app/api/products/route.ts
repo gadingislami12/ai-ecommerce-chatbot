@@ -36,7 +36,7 @@ export async function GET(request: Request) {
     }
 
     // Fallback/standard search if vector search wasn't executed, failed, or returned empty
-    if (!products) {
+    if (!products || products.length === 0) {
       const { data, error: fetchErr } = await productService.searchProducts(query, category);
       if (fetchErr) throw fetchErr;
       products = data;
