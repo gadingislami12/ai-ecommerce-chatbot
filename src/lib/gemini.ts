@@ -4,7 +4,8 @@ import { Product, Message } from '@/types';
 export async function generateChatbotResponse(
   userQuestion: string,
   history: Message[],
-  products: Product[]
+  products: Product[],
+  knowledge: any[] = []
 ): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -32,15 +33,23 @@ export async function generateChatbotResponse(
     )
     .join('\n\n');
 
+  // Format custom knowledge Q&A context block
+  const knowledgeContext = knowledge && knowledge.length > 0
+    ? knowledge.map((k) => `- Question: ${k.question}\n  Answer: ${k.answer}`).join('\n\n')
+    : 'No additional general store policies/information provided.';
+
   // 2. Define the system instructions for strict behavior
   const systemInstruction = `You are "AuraBot", the AI Sales Assistant for AuraCart.
-Your job is to answer customer questions and recommend products based ONLY on the product database provided below.
+Your job is to answer customer questions and recommend products based on the product database and store policies/information provided below.
 
 Product Database:
 ${productCatalogText}
 
+General Store Information (Custom Q&A Policies):
+${knowledgeContext}
+
 Rules:
-1. Base your answer STRICTLY on the products in the database above. If there are no products, tell the user that the catalog is currently empty.
+1. Base your answer STRICTLY on the products in the database above and the General Store Information. If a customer asks a general question (e.g. shipping, payment methods like COD, store location, opening hours), use the General Store Information to answer.
 2. If the user asks for a product not in the database, politely state that we don't have it in stock and recommend similar items from the list if possible.
 3. NEVER make up products, features, prices, or details not present in the database.
 4. When recommending products, specify their UUIDs in this format: [RecommendProduct: <uuid>]. Do not put spaces inside the tag. E.g., [RecommendProduct: ${products[0]?.id || 'uuid-here'}]. This is crucial for rendering interactive product cards in our UI.
@@ -78,3 +87,35 @@ Rules:
     throw err;
   }
 }
+
+export async function generateEmbedding(text: string): Promise<number[]> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    console.warn('GEMINI_API_KEY environment variable is not defined.');
+    throw new Error('GEMINI_API_KEY is not defined.');
+  }
+
+  const ai = new GoogleGenAI({
+    apiKey: apiKey,
+  });
+
+  try {
+    const response = await ai.models.embedContent({
+      model: 'gemini-embedding-2',
+      contents: text,
+      config: {
+        outputDimensionality: 768,
+      },
+    });
+
+    if (!response.embeddings || response.embeddings.length === 0 || !response.embeddings[0].values) {
+      throw new Error('Failed to generate embedding: empty values returned.');
+    }
+
+    return response.embeddings[0].values;
+  } catch (err: unknown) {
+    console.error('Error generating embedding from Gemini API:', err);
+    throw err;
+  }
+}
+

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { ProductService } from '@/services/productService';
+import { generateEmbedding } from '@/lib/gemini';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -41,6 +42,29 @@ export async function PUT(request: Request, { params }: RouteParams) {
 
     const body = await request.json();
     const productService = new ProductService(supabase);
+
+    // Regenerate vector embedding on update if relevant fields are modified
+    if (body.name || body.description || body.category) {
+      try {
+        let name = body.name;
+        let category = body.category;
+        let description = body.description;
+
+        if (!name || !category || !description) {
+          const { data: currentProduct } = await productService.getProductById(id);
+          if (currentProduct) {
+            name = name || currentProduct.name;
+            category = category || currentProduct.category;
+            description = description || currentProduct.description;
+          }
+        }
+
+        const textToEmbed = `${name} - ${category}. ${description}`;
+        body.embedding = await generateEmbedding(textToEmbed);
+      } catch (embedError) {
+        console.warn('Could not update embedding for product:', embedError);
+      }
+    }
 
     const { data, error } = await productService.updateProduct(id, body);
     if (error) throw error;

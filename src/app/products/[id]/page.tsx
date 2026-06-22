@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeft, CheckCircle2, XCircle, Tag, Package } from 'lucide-react';
 
+import ProductActions from '@/components/ProductActions';
+
 interface PageProps {
   params: Promise<{ id: string }>;
 }
@@ -110,18 +112,7 @@ export default async function ProductDetailPage({ params }: PageProps) {
               </div>
 
               <div className="pt-2">
-                {product.stock > 0 ? (
-                  <button className="w-full rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 py-3.5 text-sm font-semibold text-white shadow-lg shadow-indigo-600/30 hover:opacity-95 hover:scale-[1.01] active:scale-[0.99] transition-all">
-                    Purchase Now
-                  </button>
-                ) : (
-                  <button
-                    disabled
-                    className="w-full rounded-2xl bg-slate-800 py-3.5 text-sm font-semibold text-slate-500 cursor-not-allowed border border-white/5"
-                  >
-                    Unavailable
-                  </button>
-                )}
+                <ProductActions product={product} />
               </div>
             </div>
           </div>

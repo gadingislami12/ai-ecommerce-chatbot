@@ -5,13 +5,15 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { User } from '@supabase/supabase-js';
-import { ShoppingBag, LayoutDashboard, LogOut, LogIn } from 'lucide-react';
+import { ShoppingBag, LayoutDashboard, LogOut, LogIn, ShoppingCart } from 'lucide-react';
+import { useCart } from '@/hooks/useCart';
 
 export default function Navbar() {
   const supabase = createClient();
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const { cartCount } = useCart();
 
   useEffect(() => {
     const getUser = async () => {
@@ -61,6 +63,21 @@ export default function Navbar() {
             >
               Shop
             </Link>
+
+            {/* Cart Button */}
+            <Link
+              href="/checkout"
+              className="relative flex items-center justify-center p-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5 transition-all"
+              aria-label="Shopping Cart"
+            >
+              <ShoppingCart className="h-5 w-5" />
+              {cartCount > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-violet-600 text-[9px] font-bold text-white ring-2 ring-slate-950 animate-pulse">
+                  {cartCount}
+                </span>
+              )}
+            </Link>
+
 
             {!loading && (
               <>

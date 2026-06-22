@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { ProductService } from '@/services/productService';
 import { ChatService } from '@/services/chatService';
-import { Product, Conversation, Message } from '@/types';
+import { Product, Conversation, Message, Order, ChatbotKnowledge } from '@/types';
 import {
   Plus,
   Pencil,
@@ -18,11 +18,26 @@ import {
   Calendar,
   X,
   User as UserIcon,
-  Bot
+  Bot,
+  ShoppingCart,
+  BookOpen,
+  Sparkles,
+  Check
 } from 'lucide-react';
 
 function generateUniqueFileName(fileExt: string): string {
   return `${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExt}`;
+}
+
+interface AdminOrderItem {
+  id: string;
+  quantity: number;
+  price: number;
+  products: Product | null;
+}
+
+interface AdminOrder extends Order {
+  order_items: AdminOrderItem[] | null;
 }
 
 export default function AdminDashboard() {
@@ -31,7 +46,7 @@ export default function AdminDashboard() {
   const chatService = new ChatService(supabase);
 
   // Tabs
-  const [activeTab, setActiveTab] = useState<'products' | 'conversations'>('products');
+  const [activeTab, setActiveTab] = useState<'products' | 'conversations' | 'orders' | 'knowledge'>('products');
 
   // Products State
   const [products, setProducts] = useState<Product[]>([]);
@@ -39,7 +54,7 @@ export default function AdminDashboard() {
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
-  // Form State
+  // Product Form State
   const [formName, setFormName] = useState('');
   const [formDescription, setFormDescription] = useState('');
   const [formPrice, setFormPrice] = useState('');
@@ -56,6 +71,25 @@ export default function AdminDashboard() {
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
+
+  // Orders State
+  const [orders, setOrders] = useState<AdminOrder[]>([]);
+  const [orderLoading, setOrderLoading] = useState(true);
+  const [selectedOrder, setSelectedOrder] = useState<AdminOrder | null>(null);
+  const [updatingOrderStatus, setUpdatingOrderStatus] = useState<string | null>(null);
+
+  // Knowledge Base State
+  const [knowledge, setKnowledge] = useState<ChatbotKnowledge[]>([]);
+  const [knowledgeLoading, setKnowledgeLoading] = useState(true);
+  const [isKnowledgeModalOpen, setIsKnowledgeModalOpen] = useState(false);
+  const [editingKnowledge, setEditingKnowledge] = useState<ChatbotKnowledge | null>(null);
+  const [formQuestion, setFormQuestion] = useState('');
+  const [formAnswer, setFormAnswer] = useState('');
+  const [knowledgeError, setKnowledgeError] = useState<string | null>(null);
+  const [knowledgeSuccess, setKnowledgeSuccess] = useState(false);
+
+  // Embedding Backfill State
+  const [backfilling, setBackfilling] = useState(false);
 
   // Load Products
   const loadProducts = async (showLoading = false) => {
@@ -82,14 +116,76 @@ export default function AdminDashboard() {
     setMessagesLoading(false);
   };
 
+  // Load Orders
+  const loadOrders = async (showLoading = false) => {
+    if (showLoading) setOrderLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*, order_items(*, products(*))')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setOrders((data as AdminOrder[]) || []);
+      
+      // Sync selected order if open
+      if (selectedOrder) {
+        const freshSelected = data?.find((o) => o.id === selectedOrder.id);
+        if (freshSelected) setSelectedOrder(freshSelected as AdminOrder);
+      }
+    } catch (err) {
+      console.error('Error fetching orders:', err);
+    } finally {
+      setOrderLoading(false);
+    }
+  };
+
+  // Load Knowledge
+  const loadKnowledge = async (showLoading = false) => {
+    if (showLoading) setKnowledgeLoading(true);
+    try {
+      const res = await fetch('/api/knowledge');
+      if (!res.ok) throw new Error('Failed to load knowledge base');
+      const data = await res.json();
+      setKnowledge(data || []);
+    } catch (err) {
+      console.error('Error loading knowledge:', err);
+    } finally {
+      setKnowledgeLoading(false);
+    }
+  };
+
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadProducts();
     loadConversations();
+    loadOrders();
+    loadKnowledge();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Open Modal for Create
+  // Backfill Embeddings API call
+  const handleBackfillEmbeddings = async () => {
+    if (!confirm('Are you sure you want to backfill vector embeddings? This will request Gemini embedding API for products and knowledge missing vector representations.')) {
+      return;
+    }
+
+    setBackfilling(true);
+    try {
+      const res = await fetch('/api/admin/backfill-embeddings', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to backfill embeddings');
+      alert(`Success! Backfilled embeddings.\nProducts updated: ${data.productsUpdated}\nKnowledge items updated: ${data.knowledgeUpdated}`);
+      loadProducts();
+      loadKnowledge();
+    } catch (err: any) {
+      console.error(err);
+      alert(`Backfill failed: ${err.message}`);
+    } finally {
+      setBackfilling(false);
+    }
+  };
+
+  // Open Modal for Create Product
   const openCreateModal = () => {
     setEditingProduct(null);
     setFormName('');
@@ -103,7 +199,7 @@ export default function AdminDashboard() {
     setIsProductModalOpen(true);
   };
 
-  // Open Modal for Edit
+  // Open Modal for Edit Product
   const openEditModal = (product: Product) => {
     setEditingProduct(product);
     setFormName(product.name);
@@ -117,7 +213,27 @@ export default function AdminDashboard() {
     setIsProductModalOpen(true);
   };
 
-  // Handle Image Upload to Supabase Storage
+  // Open Modal for Create Knowledge
+  const openCreateKnowledgeModal = () => {
+    setEditingKnowledge(null);
+    setFormQuestion('');
+    setFormAnswer('');
+    setKnowledgeError(null);
+    setKnowledgeSuccess(false);
+    setIsKnowledgeModalOpen(true);
+  };
+
+  // Open Modal for Edit Knowledge
+  const openEditKnowledgeModal = (item: ChatbotKnowledge) => {
+    setEditingKnowledge(item);
+    setFormQuestion(item.question);
+    setFormAnswer(item.answer);
+    setKnowledgeError(null);
+    setKnowledgeSuccess(false);
+    setIsKnowledgeModalOpen(true);
+  };
+
+  // Handle image upload
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -126,36 +242,32 @@ export default function AdminDashboard() {
     setFormError(null);
 
     try {
-      // 1. Create a unique file name
       const fileExt = file.name.split('.').pop() || '';
       const fileName = generateUniqueFileName(fileExt);
       const filePath = `products/${fileName}`;
 
-      // 2. Upload file to bucket 'product-images'
       const { error: uploadError } = await supabase.storage
         .from('product-images')
         .upload(filePath, file, { cacheControl: '3600', upsert: true });
 
       if (uploadError) {
-        throw new Error(`Failed to upload. Make sure you created the 'product-images' bucket in Supabase storage and set public policy. Details: ${uploadError.message}`);
+        throw new Error(uploadError.message);
       }
 
-      // 3. Get Public URL
       const { data: { publicUrl } } = supabase.storage
         .from('product-images')
         .getPublicUrl(filePath);
 
       setFormImageUrl(publicUrl);
-    } catch (err: unknown) {
+    } catch (err: any) {
       console.error('Upload image error:', err);
-      const errMsg = err instanceof Error ? err.message : 'Failed to upload image.';
-      setFormError(errMsg);
+      setFormError(err.message || 'Failed to upload image.');
     } finally {
       setUploadingImage(false);
     }
   };
 
-  // Form Submit (Create / Update)
+  // Product Form Submit (Create / Update via API route)
   const handleSubmitProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
@@ -184,13 +296,27 @@ export default function AdminDashboard() {
 
     try {
       if (editingProduct) {
-        // Update
-        const { error } = await productService.updateProduct(editingProduct.id, payload);
-        if (error) throw error;
+        // Update via API (so embedding is generated)
+        const res = await fetch(`/api/products/${editingProduct.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || 'Failed to update product');
+        }
       } else {
-        // Create
-        const { error } = await productService.createProduct(payload);
-        if (error) throw error;
+        // Create via API (so embedding is generated)
+        const res = await fetch('/api/products', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || 'Failed to create product');
+        }
       }
 
       setFormSuccess(true);
@@ -198,10 +324,9 @@ export default function AdminDashboard() {
         setIsProductModalOpen(false);
         loadProducts();
       }, 1000);
-    } catch (err: unknown) {
+    } catch (err: any) {
       console.error('Error saving product:', err);
-      const errMsg = err instanceof Error ? err.message : 'Error occurred while saving product';
-      setFormError(errMsg);
+      setFormError(err.message || 'Error occurred while saving product');
     }
   };
 
@@ -211,12 +336,142 @@ export default function AdminDashboard() {
       return;
     }
 
-    const { error } = await productService.deleteProduct(id);
-    if (error) {
-      const errMsg = error instanceof Error ? error.message : String(error);
-      alert(`Error deleting product: ${errMsg}`);
-    } else {
+    try {
+      const res = await fetch(`/api/products/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to delete product');
       loadProducts();
+    } catch (err: any) {
+      alert(`Error deleting product: ${err.message}`);
+    }
+  };
+
+  // Submit Knowledge Q&A
+  const handleSubmitKnowledge = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setKnowledgeError(null);
+    setKnowledgeSuccess(false);
+
+    if (!formQuestion.trim() || !formAnswer.trim()) {
+      setKnowledgeError('Both question and answer are required');
+      return;
+    }
+
+    const payload = {
+      question: formQuestion,
+      answer: formAnswer,
+    };
+
+    try {
+      if (editingKnowledge) {
+        const res = await fetch('/api/knowledge', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: editingKnowledge.id, ...payload }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to update knowledge');
+      } else {
+        const res = await fetch('/api/knowledge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to create knowledge');
+      }
+
+      setKnowledgeSuccess(true);
+      setTimeout(() => {
+        setIsKnowledgeModalOpen(false);
+        loadKnowledge();
+      }, 1000);
+    } catch (err: any) {
+      console.error('Error saving knowledge:', err);
+      setKnowledgeError(err.message || 'Error occurred while saving knowledge');
+    }
+  };
+
+  // Delete Knowledge Item
+  const handleDeleteKnowledge = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this knowledge item?')) return;
+
+    try {
+      const res = await fetch(`/api/knowledge?id=${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to delete knowledge');
+      loadKnowledge();
+    } catch (err: any) {
+      alert(`Error deleting: ${err.message}`);
+    }
+  };
+
+  // Direct copy user query from conversation log into a new Knowledge base item
+  const handleAddLogToKnowledge = (questionText: string) => {
+    setEditingKnowledge(null);
+    setFormQuestion(questionText);
+    setFormAnswer('');
+    setKnowledgeError(null);
+    setKnowledgeSuccess(false);
+    setActiveTab('knowledge');
+    setIsKnowledgeModalOpen(true);
+  };
+
+  // Update Order Status (paid, failed, shipped, completed, pending)
+  const handleUpdateOrderStatus = async (id: string, status: string) => {
+    setUpdatingOrderStatus(id);
+    try {
+      // In simulator setting, we can just update status in Supabase.
+      // But if we simulate payment 'paid', we should call the API callback route so it decrements stock properly!
+      if (status === 'paid') {
+        const res = await fetch(`/api/orders/${id}/pay`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'paid' }),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || 'Failed to process payment status update');
+        }
+      } else if (status === 'failed') {
+        const res = await fetch(`/api/orders/${id}/pay`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'failed' }),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || 'Failed to process payment status update');
+        }
+      } else {
+        // Just standard status updates (shipped, completed, pending)
+        const { error } = await supabase
+          .from('orders')
+          .update({ status })
+          .eq('id', id);
+
+        if (error) throw error;
+      }
+
+      await loadOrders();
+    } catch (err: any) {
+      console.error('Error updating order status:', err);
+      alert(`Error: ${err.message}`);
+    } finally {
+      setUpdatingOrderStatus(null);
+    }
+  };
+
+  // Delete Order Record
+  const handleDeleteOrder = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this order record? This cannot be undone.')) return;
+    try {
+      const { error } = await supabase.from('orders').delete().eq('id', id);
+      if (error) throw error;
+      if (selectedOrder?.id === id) setSelectedOrder(null);
+      loadOrders();
+    } catch (err: any) {
+      alert(`Error: ${err.message}`);
     }
   };
 
@@ -243,36 +498,76 @@ export default function AdminDashboard() {
     <main className="min-h-screen bg-slate-950 text-white p-6 sm:p-8">
       <div className="mx-auto max-w-7xl">
         {/* Dashboard Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-white/5 pb-6 gap-4">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between border-b border-white/5 pb-6 gap-4">
           <div>
             <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">
               Control Panel
             </h1>
-            <p className="text-slate-400 text-xs mt-1">
-              Manage product listings, upload images, and audit AI chatbot conversation threads.
+            <p className="text-slate-400 text-xs mt-1 font-semibold">
+              Manage product listings, audit customer order transactions, edit AI chatbot knowledge, and monitor chats.
             </p>
           </div>
 
-          {/* Tab Selector */}
-          <div className="flex bg-slate-900 border border-white/5 p-1 rounded-xl shrink-0">
+          {/* Actions & Tab Selector */}
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Backfill Embeddings Button */}
             <button
-              onClick={() => setActiveTab('products')}
-              className={`flex items-center space-x-1.5 px-4 py-2 text-xs font-semibold rounded-lg transition-all ${
-                activeTab === 'products' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white'
-              }`}
+              onClick={handleBackfillEmbeddings}
+              disabled={backfilling}
+              className="flex items-center space-x-1.5 rounded-xl border border-indigo-500/25 bg-indigo-500/10 px-3.5 py-2 text-xs font-semibold text-indigo-400 hover:bg-indigo-500/20 active:scale-[0.98] transition-all disabled:opacity-50"
             >
-              <Package className="h-4 w-4" />
-              <span>Products</span>
+              {backfilling ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <span>Embedding...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-3.5 w-3.5" />
+                  <span>Backfill Embeddings</span>
+                </>
+              )}
             </button>
-            <button
-              onClick={() => setActiveTab('conversations')}
-              className={`flex items-center space-x-1.5 px-4 py-2 text-xs font-semibold rounded-lg transition-all ${
-                activeTab === 'conversations' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <MessageSquare className="h-4 w-4" />
-              <span>Conversations</span>
-            </button>
+
+            {/* Tab Selector */}
+            <div className="flex bg-slate-900 border border-white/5 p-1 rounded-xl shrink-0">
+              <button
+                onClick={() => setActiveTab('products')}
+                className={`flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                  activeTab === 'products' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Package className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Products</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('orders')}
+                className={`flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                  activeTab === 'orders' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <ShoppingCart className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Orders</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('knowledge')}
+                className={`flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                  activeTab === 'knowledge' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <BookOpen className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Knowledge</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('conversations')}
+                className={`flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                  activeTab === 'conversations' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <MessageSquare className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Chats</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -364,7 +659,258 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* Tab Contents: Conversations */}
+        {/* Tab Contents: Orders */}
+        {activeTab === 'orders' && (
+          <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
+            {/* Orders list */}
+            <div className="lg:col-span-1 border border-white/5 bg-slate-900 rounded-2xl p-5 shadow-xl flex flex-col h-[600px]">
+              <h2 className="text-lg font-bold mb-4 flex items-center space-x-2 border-b border-white/5 pb-3">
+                <ShoppingCart className="h-5 w-5 text-indigo-400" />
+                <span>Orders ({orders.length})</span>
+              </h2>
+
+              <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 scrollbar-thin">
+                {orderLoading ? (
+                  <div className="flex h-full items-center justify-center">
+                    <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
+                  </div>
+                ) : orders.length === 0 ? (
+                  <div className="text-center py-12 text-slate-500 text-xs">No orders recorded yet.</div>
+                ) : (
+                  orders.map((o) => (
+                    <div
+                      key={o.id}
+                      onClick={() => setSelectedOrder(o)}
+                      className={`group relative flex flex-col p-3.5 rounded-xl border cursor-pointer transition-all ${
+                        selectedOrder?.id === o.id
+                          ? 'bg-indigo-600/10 border-indigo-500/30'
+                          : 'bg-slate-950/40 border-white/5 hover:bg-white/5 hover:border-white/10'
+                      }`}
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="text-[10px] font-bold text-slate-400 font-mono">
+                          ID: {o.id.substring(0, 8)}...
+                        </span>
+                        
+                        {/* Status Badge */}
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
+                          o.status === 'paid' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                          o.status === 'failed' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                          o.status === 'pending' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
+                          'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'
+                        }`}>
+                          {o.status}
+                        </span>
+                      </div>
+
+                      <span className="text-xs font-semibold text-white truncate">{o.customer_name}</span>
+                      
+                      <div className="flex justify-between items-center mt-2.5">
+                        <span className="text-[10px] text-slate-500 font-mono">
+                          {new Date(o.created_at).toLocaleDateString('id-ID')}
+                        </span>
+                        <span className="text-xs font-bold font-mono text-indigo-400">
+                          {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(o.total_amount)}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Order Detail view */}
+            <div className="lg:col-span-2 border border-white/5 bg-slate-900 rounded-2xl p-5 shadow-xl flex flex-col h-[600px]">
+              {selectedOrder ? (
+                <div className="flex flex-col h-full justify-between">
+                  <div className="overflow-y-auto space-y-5 pr-1 scrollbar-thin flex-grow">
+                    <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                      <div>
+                        <h3 className="text-sm font-bold text-white flex items-center space-x-1.5 font-mono">
+                          <span>Order Details:</span>
+                          <span className="text-indigo-400 bg-indigo-500/5 px-2 py-0.5 rounded border border-indigo-500/10 text-xs">
+                            {selectedOrder.id}
+                          </span>
+                        </h3>
+                        <p className="text-[10px] text-slate-500 mt-1 font-mono">
+                          Received: {new Date(selectedOrder.created_at).toLocaleString('id-ID')}
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={() => handleDeleteOrder(selectedOrder.id)}
+                        className="rounded-lg bg-red-500/10 border border-red-500/20 p-2 text-red-400 hover:bg-red-500/20 transition-all shrink-0"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+
+                    {/* Customer Info Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 rounded-xl bg-slate-950/45 p-4 border border-white/5 text-xs">
+                      <div>
+                        <span className="text-slate-500 block mb-1">Customer Details</span>
+                        <p className="text-white font-semibold">{selectedOrder.customer_name}</p>
+                        <p className="text-slate-400 font-mono mt-0.5">{selectedOrder.customer_email}</p>
+                        {selectedOrder.customer_phone && (
+                          <p className="text-slate-400 font-mono mt-0.5">{selectedOrder.customer_phone}</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <span className="text-slate-500 block mb-1">Shipping Destination</span>
+                        <p className="text-slate-300 leading-relaxed font-semibold whitespace-pre-line">
+                          {selectedOrder.shipping_address}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Payment Info */}
+                    <div className="grid grid-cols-2 gap-4 rounded-xl bg-slate-950/45 p-4 border border-white/5 text-xs">
+                      <div>
+                        <span className="text-slate-500 block mb-1">Payment Method</span>
+                        <p className="text-white font-semibold">{selectedOrder.payment_method}</p>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block mb-1">Order Status Control</span>
+                        <div className="flex items-center space-x-2 mt-1">
+                          <select
+                            disabled={updatingOrderStatus === selectedOrder.id}
+                            value={selectedOrder.status}
+                            onChange={(e) => handleUpdateOrderStatus(selectedOrder.id, e.target.value)}
+                            className="bg-slate-900 border border-white/10 rounded px-2.5 py-1 text-xs text-white focus:outline-none focus:border-indigo-500"
+                          >
+                            <option value="pending">Pending</option>
+                            <option value="paid">Paid</option>
+                            <option value="failed">Failed</option>
+                            <option value="shipped">Shipped</option>
+                            <option value="completed">Completed</option>
+                          </select>
+                          {updatingOrderStatus === selectedOrder.id && (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-400" />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Purchased Items List */}
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Items Purchased</h4>
+                      <div className="border border-white/5 rounded-xl overflow-hidden bg-slate-950/40">
+                        <table className="min-w-full divide-y divide-white/5 text-left text-xs text-slate-300">
+                          <thead className="bg-slate-950 text-slate-500 font-semibold uppercase tracking-wider">
+                            <tr>
+                              <th className="px-4 py-3">Product Name</th>
+                              <th className="px-4 py-3">Price</th>
+                              <th className="px-4 py-3">Qty</th>
+                              <th className="px-4 py-3 text-right">Subtotal</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-white/5 font-mono">
+                            {selectedOrder.order_items?.map((item) => (
+                              <tr key={item.id} className="hover:bg-white/5 transition-colors">
+                                <td className="px-4 py-3 text-white font-sans font-semibold">
+                                  {item.products?.name || 'Deleted Product'}
+                                </td>
+                                <td className="px-4 py-3">
+                                  {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(item.price)}
+                                </td>
+                                <td className="px-4 py-3">{item.quantity}</td>
+                                <td className="px-4 py-3 text-right text-indigo-400 font-bold">
+                                  {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(item.price * item.quantity)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Total footer */}
+                  <div className="border-t border-white/5 pt-4 mt-4 flex items-center justify-between">
+                    <span className="text-slate-400 text-xs font-semibold">Grand Total:</span>
+                    <span className="text-xl font-extrabold font-mono text-emerald-400">
+                      {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(selectedOrder.total_amount)}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-slate-500 space-y-2">
+                  <ShoppingCart className="h-8 w-8 text-slate-600" />
+                  <span className="text-xs font-semibold">Select an order on the left side to view details.</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Tab Contents: Knowledge Base */}
+        {activeTab === 'knowledge' && (
+          <div className="mt-8 space-y-6 animate-fade-in">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold">Custom Chatbot Knowledge ({knowledge.length})</h2>
+              <button
+                onClick={openCreateKnowledgeModal}
+                className="flex items-center space-x-1.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-4 py-2.5 text-xs font-semibold text-white shadow-md shadow-indigo-600/20 hover:opacity-90 active:scale-[0.98] transition-all"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Add Q&A Item</span>
+              </button>
+            </div>
+
+            {knowledgeLoading ? (
+              <div className="flex h-64 items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
+              </div>
+            ) : knowledge.length === 0 ? (
+              <div className="rounded-2xl border border-white/5 bg-slate-900 p-12 text-center">
+                <BookOpen className="h-8 w-8 text-slate-500 mx-auto" />
+                <h3 className="mt-4 text-base font-semibold">No custom Q&A items</h3>
+                <p className="mt-1 text-xs text-slate-400">Insert operational rules or Q&A (e.g. shipping, returns, etc.) for the bot.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-2xl border border-white/5 bg-slate-900 shadow-xl">
+                <table className="min-w-full divide-y divide-white/5 text-left text-sm text-slate-300">
+                  <thead className="bg-slate-950 text-slate-400 text-xs uppercase tracking-wider font-semibold">
+                    <tr>
+                      <th className="px-6 py-4 max-w-sm">Question</th>
+                      <th className="px-6 py-4">Answer</th>
+                      <th className="px-6 py-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {knowledge.map((item) => (
+                      <tr key={item.id} className="hover:bg-white/5 transition-colors">
+                        <td className="px-6 py-4 font-semibold text-white max-w-sm">
+                          {item.question}
+                        </td>
+                        <td className="px-6 py-4 text-slate-400 leading-relaxed text-xs">
+                          <p className="line-clamp-2 max-w-lg">{item.answer}</p>
+                        </td>
+                        <td className="px-6 py-4 text-right space-x-2 shrink-0">
+                          <button
+                            onClick={() => openEditKnowledgeModal(item)}
+                            className="inline-flex items-center justify-center h-8 w-8 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 transition-all border border-white/5"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteKnowledge(item.id)}
+                            className="inline-flex items-center justify-center h-8 w-8 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-all border border-red-500/20"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab Contents: Conversations (Audit chats) */}
         {activeTab === 'conversations' && (
           <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Conversations List */}
@@ -452,7 +998,7 @@ export default function AdminDashboard() {
                         >
                           {/* Avatar icon */}
                           <div
-                            className={`flex h-8 w-8 items-center justify-center rounded-lg border ${
+                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
                               m.role === 'user'
                                 ? 'bg-indigo-500/15 border-indigo-500/20 text-indigo-400'
                                 : 'bg-violet-500/15 border-violet-500/20 text-violet-400'
@@ -463,12 +1009,24 @@ export default function AdminDashboard() {
 
                           {/* Message Body */}
                           <div
-                            className={`rounded-2xl px-4 py-3 text-xs leading-relaxed ${
+                            className={`rounded-2xl px-4 py-3 text-xs leading-relaxed relative group ${
                               m.role === 'user'
                                 ? 'bg-indigo-600 text-white rounded-tr-none'
                                 : 'bg-slate-950 text-slate-200 border border-white/5 rounded-tl-none'
                             }`}
                           >
+                            {/* Copy query to Knowledge base button for user queries */}
+                            {m.role === 'user' && (
+                              <button
+                                onClick={() => handleAddLogToKnowledge(m.content)}
+                                className="absolute -left-28 top-2 bg-indigo-500/10 hover:bg-indigo-500/25 text-indigo-400 hover:text-white border border-indigo-500/20 text-[9px] px-2 py-1 rounded transition-all opacity-0 group-hover:opacity-100 flex items-center space-x-1 shrink-0 shadow-md font-sans"
+                                title="Add this customer query to Chatbot Knowledge Base"
+                              >
+                                <Plus className="h-2.5 w-2.5" />
+                                <span>Add to Q&A</span>
+                              </button>
+                            )}
+
                             <p className="whitespace-pre-line">{m.content}</p>
                             <span className="block text-[8px] text-slate-400/80 mt-1.5 text-right font-mono">
                               {new Date(m.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
@@ -639,7 +1197,7 @@ export default function AdminDashboard() {
                     </div>
 
                     {formImageUrl && (
-                      <div className="flex items-center space-x-2 text-[10px] text-indigo-400 font-medium">
+                      <div className="flex items-center space-x-2 text-[10px] text-indigo-400 font-medium font-mono">
                         <span className="truncate max-w-[150px]">Link set: {formImageUrl}</span>
                       </div>
                     )}
@@ -662,6 +1220,85 @@ export default function AdminDashboard() {
                   className="rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-5 py-2.5 text-xs font-semibold text-white shadow-md shadow-indigo-600/20 hover:opacity-95 active:scale-[0.98] transition-all disabled:opacity-50"
                 >
                   {editingProduct ? 'Save Changes' : 'Create Product'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Knowledge Base Modal */}
+      {isKnowledgeModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm transition-all animate-fade-in">
+          <div className="relative w-full max-w-2xl bg-slate-900 border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl overflow-y-auto max-h-[90vh] scrollbar-thin">
+            
+            {/* Close Button */}
+            <button
+              onClick={() => setIsKnowledgeModalOpen(false)}
+              className="absolute top-4 right-4 flex items-center justify-center h-8 w-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-all border border-white/5"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            {/* Modal Title */}
+            <h2 className="text-xl font-bold flex items-center space-x-2 mb-6">
+              <BookOpen className="h-5 w-5 text-indigo-400" />
+              <span>{editingKnowledge ? 'Edit Q&A Item' : 'Add Q&A to Knowledge Base'}</span>
+            </h2>
+
+            {knowledgeError && (
+              <div className="mb-4 rounded-xl border border-red-500/20 bg-red-500/5 p-4 flex items-start space-x-2.5">
+                <X className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
+                <span className="text-xs text-red-300 font-medium leading-relaxed">{knowledgeError}</span>
+              </div>
+            )}
+
+            {knowledgeSuccess && (
+              <div className="mb-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-center">
+                <span className="text-xs text-emerald-400 font-medium">Knowledge Q&A saved successfully!</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmitKnowledge} className="space-y-5">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-400">User Question / Topic</label>
+                <input
+                  type="text"
+                  required
+                  value={formQuestion}
+                  onChange={(e) => setFormQuestion(e.target.value)}
+                  placeholder="e.g. Apakah bisa COD (Cash on Delivery)?"
+                  className="block w-full rounded-xl border border-white/15 bg-slate-950/50 px-3.5 py-2.5 text-xs text-white placeholder-slate-600 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-colors"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-400">Response / Answer</label>
+                <textarea
+                  required
+                  rows={6}
+                  value={formAnswer}
+                  onChange={(e) => setFormAnswer(e.target.value)}
+                  placeholder="Type the detailed response that AuraBot should give when asked this question..."
+                  className="block w-full rounded-xl border border-white/15 bg-slate-950/50 px-3.5 py-2.5 text-xs text-white placeholder-slate-600 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-colors resize-none scrollbar-none"
+                />
+              </div>
+
+              {/* Submit Buttons */}
+              <div className="flex items-center justify-end space-x-3 pt-4 border-t border-white/5">
+                <button
+                  type="button"
+                  onClick={() => setIsKnowledgeModalOpen(false)}
+                  className="rounded-xl border border-white/10 bg-slate-800 px-4 py-2.5 text-xs font-semibold text-slate-300 hover:bg-slate-700 transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={knowledgeSuccess}
+                  className="rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-5 py-2.5 text-xs font-semibold text-white shadow-md shadow-indigo-600/20 hover:opacity-95 active:scale-[0.98] transition-all disabled:opacity-50"
+                >
+                  {editingKnowledge ? 'Save Changes' : 'Add to Knowledge'}
                 </button>
               </div>
             </form>

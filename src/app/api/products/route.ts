@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { ProductService } from '@/services/productService';
+import { generateEmbedding } from '@/lib/gemini';
 
-// GET all products
+// GET all products (with optional vector search)
 export async function GET(request: Request) {
   try {
     const supabase = await createClient();
@@ -13,10 +14,36 @@ export async function GET(request: Request) {
     const query = searchParams.get('q') || undefined;
     const category = searchParams.get('category') || undefined;
 
-    const { data, error } = await productService.searchProducts(query, category);
+    let products = null;
+    let error = null;
 
-    if (error) throw error;
-    return NextResponse.json(data);
+    if (query) {
+      try {
+        // Try Vector Search (Semantic Search)
+        const embedding = await generateEmbedding(query);
+        const { data: matched, error: rpcError } = await supabase.rpc('match_products', {
+          query_embedding: embedding,
+          match_threshold: 0.2,
+          match_count: 24,
+          category_filter: category || 'All',
+        });
+
+        if (rpcError) throw rpcError;
+        products = matched;
+      } catch (err) {
+        console.warn('Vector search failed or not configured, falling back to text search:', err);
+      }
+    }
+
+    // Fallback/standard search if vector search wasn't executed, failed, or returned empty
+    if (!products) {
+      const { data, error: fetchErr } = await productService.searchProducts(query, category);
+      if (fetchErr) throw fetchErr;
+      products = data;
+      error = fetchErr;
+    }
+
+    return NextResponse.json(products);
   } catch (err: unknown) {
     console.error('API Error (GET products):', err);
     const errMsg = err instanceof Error ? err.message : 'Internal Server Error';
@@ -24,7 +51,7 @@ export async function GET(request: Request) {
   }
 }
 
-// POST create a product (Admin protected)
+// POST create a product (Admin protected, generate embedding)
 export async function POST(request: Request) {
   try {
     const supabase = await createClient();
@@ -38,6 +65,14 @@ export async function POST(request: Request) {
     const body = await request.json();
     const productService = new ProductService(supabase);
     
+    // Auto-generate vector embedding on creation
+    try {
+      const textToEmbed = `${body.name} - ${body.category}. ${body.description}`;
+      body.embedding = await generateEmbedding(textToEmbed);
+    } catch (embedError) {
+      console.warn('Could not generate embedding for new product:', embedError);
+    }
+
     const { data, error } = await productService.createProduct(body);
     if (error) throw error;
 
@@ -48,3 +83,4 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: errMsg }, { status: 500 });
   }
 }
+
